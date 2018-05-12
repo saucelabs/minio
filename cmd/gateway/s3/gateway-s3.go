@@ -18,17 +18,14 @@ package s3
 
 import (
 	"context"
-	"encoding/json"
 	"io"
-	"strings"
+	"os"
 
 	"github.com/minio/cli"
 	miniogo "github.com/minio/minio-go"
-	"github.com/minio/minio-go/pkg/s3utils"
 	"github.com/minio/minio/cmd/logger"
 	"github.com/minio/minio/pkg/auth"
 	"github.com/minio/minio/pkg/hash"
-	"github.com/minio/minio/pkg/policy"
 
 	minio "github.com/minio/minio/cmd"
 )
@@ -144,8 +141,23 @@ func (g *S3) NewGatewayLayer(creds auth.Credentials) (minio.ObjectLayer, error) 
 		return nil, err
 	}
 
+	var gwBuckets buckets
+	gwBuckets = &s3Buckets{
+		Client: client,
+	}
+
+	masterBucket := os.Getenv("MINIO_S3_MASTER_BUCKET")
+	if masterBucket != "" {
+		gwBuckets = &minioS3Buckets{
+			s3Buckets: gwBuckets.(*s3Buckets),
+			masterBucket: masterBucket,
+			Client: client,
+		}
+	}
+
 	return &s3Objects{
 		Client: client,
+		buckets: gwBuckets,
 	}, nil
 }
 
@@ -158,6 +170,7 @@ func (g *S3) Production() bool {
 type s3Objects struct {
 	minio.GatewayUnsupported
 	Client *miniogo.Core
+	buckets
 }
 
 // Shutdown saves any gateway metadata to disk
@@ -169,80 +182,6 @@ func (l *s3Objects) Shutdown(ctx context.Context) error {
 // StorageInfo is not relevant to S3 backend.
 func (l *s3Objects) StorageInfo(ctx context.Context) (si minio.StorageInfo) {
 	return si
-}
-
-// MakeBucket creates a new container on S3 backend.
-func (l *s3Objects) MakeBucketWithLocation(ctx context.Context, bucket, location string) error {
-	// Verify if bucket name is valid.
-	// We are using a separate helper function here to validate bucket
-	// names instead of IsValidBucketName() because there is a possibility
-	// that certains users might have buckets which are non-DNS compliant
-	// in us-east-1 and we might severely restrict them by not allowing
-	// access to these buckets.
-	// Ref - http://docs.aws.amazon.com/AmazonS3/latest/dev/BucketRestrictions.html
-	if s3utils.CheckValidBucketName(bucket) != nil {
-		logger.LogIf(ctx, minio.BucketNameInvalid{Bucket: bucket})
-		return minio.BucketNameInvalid{Bucket: bucket}
-	}
-
-	err := l.Client.MakeBucket(bucket, location)
-	if err != nil {
-		logger.LogIf(ctx, err)
-		return minio.ErrorRespToObjectError(err, bucket)
-	}
-	return err
-}
-
-// GetBucketInfo gets bucket metadata..
-func (l *s3Objects) GetBucketInfo(ctx context.Context, bucket string) (bi minio.BucketInfo, e error) {
-	buckets, err := l.Client.ListBuckets()
-	if err != nil {
-		logger.LogIf(ctx, err)
-		return bi, minio.ErrorRespToObjectError(err, bucket)
-	}
-
-	for _, bi := range buckets {
-		if bi.Name != bucket {
-			continue
-		}
-
-		return minio.BucketInfo{
-			Name:    bi.Name,
-			Created: bi.CreationDate,
-		}, nil
-	}
-
-	logger.LogIf(ctx, minio.BucketNotFound{Bucket: bucket})
-	return bi, minio.BucketNotFound{Bucket: bucket}
-}
-
-// ListBuckets lists all S3 buckets
-func (l *s3Objects) ListBuckets(ctx context.Context) ([]minio.BucketInfo, error) {
-	buckets, err := l.Client.ListBuckets()
-	if err != nil {
-		logger.LogIf(ctx, err)
-		return nil, minio.ErrorRespToObjectError(err)
-	}
-
-	b := make([]minio.BucketInfo, len(buckets))
-	for i, bi := range buckets {
-		b[i] = minio.BucketInfo{
-			Name:    bi.Name,
-			Created: bi.CreationDate,
-		}
-	}
-
-	return b, err
-}
-
-// DeleteBucket deletes a bucket on S3
-func (l *s3Objects) DeleteBucket(ctx context.Context, bucket string) error {
-	err := l.Client.RemoveBucket(bucket)
-	if err != nil {
-		logger.LogIf(ctx, err)
-		return minio.ErrorRespToObjectError(err, bucket)
-	}
-	return nil
 }
 
 // ListObjects lists all blobs in S3 bucket filtered by prefix
@@ -426,42 +365,4 @@ func (l *s3Objects) CompleteMultipartUpload(ctx context.Context, bucket string, 
 	}
 
 	return l.GetObjectInfo(ctx, bucket, object)
-}
-
-// SetBucketPolicy sets policy on bucket
-func (l *s3Objects) SetBucketPolicy(ctx context.Context, bucket string, bucketPolicy *policy.Policy) error {
-	data, err := json.Marshal(bucketPolicy)
-	if err != nil {
-		// This should not happen.
-		logger.LogIf(ctx, err)
-		return minio.ErrorRespToObjectError(err, bucket)
-	}
-
-	if err := l.Client.SetBucketPolicy(bucket, string(data)); err != nil {
-		logger.LogIf(ctx, err)
-		return minio.ErrorRespToObjectError(err, bucket)
-	}
-
-	return nil
-}
-
-// GetBucketPolicy will get policy on bucket
-func (l *s3Objects) GetBucketPolicy(ctx context.Context, bucket string) (*policy.Policy, error) {
-	data, err := l.Client.GetBucketPolicy(bucket)
-	if err != nil {
-		logger.LogIf(ctx, err)
-		return nil, minio.ErrorRespToObjectError(err, bucket)
-	}
-
-	bucketPolicy, err := policy.ParseConfig(strings.NewReader(data), bucket)
-	return bucketPolicy, minio.ErrorRespToObjectError(err, bucket)
-}
-
-// DeleteBucketPolicy deletes all policies on bucket
-func (l *s3Objects) DeleteBucketPolicy(ctx context.Context, bucket string) error {
-	if err := l.Client.SetBucketPolicy(bucket, ""); err != nil {
-		logger.LogIf(ctx, err)
-		return minio.ErrorRespToObjectError(err, bucket, "")
-	}
-	return nil
 }
