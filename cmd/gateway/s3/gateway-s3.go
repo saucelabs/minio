@@ -243,7 +243,6 @@ func (l *s3Objects) GetObject(ctx context.Context, bucket string, key string, st
 func (l *s3Objects) GetObjectInfo(ctx context.Context, bucket string, object string) (objInfo minio.ObjectInfo, err error) {
 	oi, err := l.Client.StatObject(bucket, object, miniogo.StatObjectOptions{})
 	if err != nil {
-		logger.LogIf(ctx, err)
 		return minio.ObjectInfo{}, minio.ErrorRespToObjectError(err, bucket, object)
 	}
 
