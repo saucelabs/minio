@@ -234,15 +234,16 @@ func (l *minioS3Buckets) MakeBucketWithLocation(ctx context.Context, bucket, loc
 	// create S3 bucket
 	err = l.s3Buckets.MakeBucketWithLocation(ctx, bucket, location)
 	if err != nil {
-	_, ok := err.(minio.BucketExists)
-	if !ok {
-		_, ok = err.(minio.BucketAlreadyOwnedByYou)
+		logger.Info("Ignoring make bucket error in master bucket mode:", err.Error())
 	}
-	// if bucket already exists we ignore the error and add the missing record
-	if !ok {
+
+	// Make sure bucket exist
+	_, err = l.Client.ListObjects(l.masterBucket, "", "", "", 1)
+	if err != nil {
+		err = minio.ErrorRespToObjectError(err)
+		logger.LogIf(ctx, err)
 		return err
 	}
-}
 
 	// add bucket record
 	data, err := hash.NewReader(bytes.NewBufferString(""), int64(len("")), "", "")
