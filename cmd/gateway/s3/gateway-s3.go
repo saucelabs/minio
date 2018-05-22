@@ -149,14 +149,14 @@ func (g *S3) NewGatewayLayer(creds auth.Credentials) (minio.ObjectLayer, error) 
 	masterBucket := os.Getenv("MINIO_S3_MASTER_BUCKET")
 	if masterBucket != "" {
 		gwBuckets = &minioS3Buckets{
-			s3Buckets: gwBuckets.(*s3Buckets),
+			s3Buckets:    gwBuckets.(*s3Buckets),
 			masterBucket: masterBucket,
-			Client: client,
+			Client:       client,
 		}
 	}
 
 	return &s3Objects{
-		Client: client,
+		Client:  client,
 		buckets: gwBuckets,
 	}, nil
 }

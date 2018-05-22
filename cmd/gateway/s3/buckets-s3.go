@@ -171,7 +171,7 @@ func (l *s3Buckets) DeleteBucketPolicy(ctx context.Context, bucket string) error
 type minioS3Buckets struct {
 	*s3Buckets
 	masterBucket string
-	Client *miniogo.Core
+	Client       *miniogo.Core
 }
 
 // GetBucketInfo gets bucket metadata..
@@ -187,7 +187,7 @@ func (l *minioS3Buckets) GetBucketInfo(ctx context.Context, bucket string) (bi m
 		return bi, err
 	}
 	bi = minio.BucketInfo{
-		Name: bucket,
+		Name:    bucket,
 		Created: oi.LastModified,
 	}
 	return bi, nil
@@ -201,7 +201,6 @@ func (l *minioS3Buckets) ListBuckets(ctx context.Context) ([]minio.BucketInfo, e
 	for i, oi := range result.Contents {
 		ois[i] = minio.FromMinioClientObjectInfo(l.masterBucket, oi)
 	}
-
 
 	if err != nil {
 		logger.LogIf(ctx, err)
@@ -224,7 +223,7 @@ func (l *minioS3Buckets) MakeBucketWithLocation(ctx context.Context, bucket, loc
 	// check that bucket does not exist
 	_, err := l.Client.StatObject(l.masterBucket, bucket, miniogo.StatObjectOptions{})
 	if err == nil {
-			return minio.BucketExists{Bucket: bucket}
+		return minio.BucketExists{Bucket: bucket}
 	}
 	err = minio.ErrorRespToObjectError(err)
 	if _, ok := err.(minio.BucketNotFound); !ok {
@@ -247,7 +246,7 @@ func (l *minioS3Buckets) MakeBucketWithLocation(ctx context.Context, bucket, loc
 
 	// add bucket record
 	data, err := hash.NewReader(bytes.NewBufferString(""), int64(len("")), "", "")
-		_, err = l.Client.PutObject(l.masterBucket, bucket, data, data.Size(), data.MD5Base64String(), data.SHA256HexString(), nil)
+	_, err = l.Client.PutObject(l.masterBucket, bucket, data, data.Size(), data.MD5Base64String(), data.SHA256HexString(), nil)
 	if err != nil {
 		return err
 	}
